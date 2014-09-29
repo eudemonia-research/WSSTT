@@ -7,6 +7,14 @@ SSTT handles peer management, and provides a messaging layer on top for nodes to
 
 Inspired somewhat by [Spore](https://github.com/encodium-research/Spore)
 
+## Requirements
+
+* Python 3.4+
+* [Encodium](https://github.com/eudemonia-research/encoidum)
+* jsonrpc-requests
+* Flask
+* Flask-JSONRPC
+
 ## Code Example:
 
 ```
