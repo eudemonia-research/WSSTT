@@ -1,3 +1,5 @@
+import traceback
+
 import jsonrpc_requests
 from encodium import Encodium, Integer, String, List
 
@@ -34,10 +36,12 @@ class Peer(Encodium):
                 # mark peer banned or bad
                 # todo: figure out best policy here
                 self.is_bad = True
-            return MessageBubble.from_json(result)
+            else:
+                return MessageBubble.from_json(result)
         except Exception as e:
             # todo: bad peer, remove from subscribed
             print("Exception:", e)
+            traceback.print_exc()
             print("Occurred carrying", message, payload)
 
     @property

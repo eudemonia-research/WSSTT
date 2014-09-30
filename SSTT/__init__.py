@@ -88,11 +88,6 @@ class Network:
             self.methods[func.__name__] = deserialize_and_pass_to_func
         return inner_method
 
-    def broadcast(self, message, payload):
-        with self.active_peers_lock:
-            for pair in self.active_peers:
-                fire(target=self.request_an_obj_from_peer(Encodium, self.peer_objects[pair], message, payload))
-
     def should_add_peer(self, peer: Peer):
         if peer.as_pair in self.banned:
             return False
@@ -128,23 +123,48 @@ class Network:
         with self.active_peers_lock:
             if peer.as_pair in self.active_peers:
                 self.active_peers.remove(peer.as_pair)
-            del self.peer_objects[peer.as_pair]
+            if peer.as_pair in self.peer_objects:
+                del self.peer_objects[peer.as_pair]
             self.banned.add(peer.as_pair)
+
+    def broadcast(self, message, payload):
+        with self.active_peers_lock:
+            for pair in self.active_peers:
+                fire(target=self.request_an_obj_from_peer(Encodium, self.peer_objects[pair], message, payload))
+
+    def broadcast_with_response(self, encodium_object_to_receive: Encodium, message, payload: Encodium):
+        responses = []
+        threads = []
+        with self.active_peers_lock:
+            for pair in self.active_peers:
+                f = lambda : responses.append(self.request_an_obj_from_peer(encodium_object_to_receive, self.get_peer(pair), message, payload))
+                threads.append(threading.Thread(target=f))
+        for t in threads: t.join()
+        return [r for r in responses if r is not None]
 
     def request_an_obj_from_peer(self, encodium_object: Encodium, peer: Peer, method, payload: Encodium=Encodium(), nonce=None):
         if nonce is None:
             nonce = self.get_new_nonce()
         result = peer.request(method, payload, nonce)
         if result is None:
-            self.ban(peer.as_pair)
+            self.ban(peer)
+            return result
         else:
-            return encodium_object.from_json(result)
+            return encodium_object.from_json(result.payload)
+
+    def request_an_obj_from_hive(self, encodium_object: Encodium, method, payload: Encodium=Encodium(), nonce=None):
+        peer = self.peer_objects[random.choice(self.active_peers)]
+        result = self.request_an_obj_from_peer(encodium_object, method, payload, nonce)
+        if result is None:
+            return self.request_an_obj_from_hive(encodium_object, method, payload, nonce)
+        else:
+            return encodium_object.from_json(result.payload)
 
     def crawl_loop(self):
         def get_peer_list(peer: Peer):
             result = self.request_an_obj_from_peer(PeerInfo, peer, PEER_INFO)
             if result is not None:
-                return PeerInfo.from_json(result.payload)
+                return result
             if peer.is_bad:
                 # ban
                 self.ban(peer)
@@ -157,11 +177,12 @@ class Network:
             threads = [fire(populate_peerlist, args=(i,)) for i in self.active_peers]
             for t in threads: t.join()
             peerlists = [i for i in peerlists if i is not None and len(i.peers) > 0]
-
+            print("Peerlists", peerlists)
             if len(peerlists) == 0:
                 return set()
             new_peers = set()
             for i in range(10): new_peers.add(random.choice(random.choice(peerlists).peers))
+            print("Returning:", new_peers)
             return new_peers
 
         def make_peers_random():
