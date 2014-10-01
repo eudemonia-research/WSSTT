@@ -25,14 +25,6 @@ class Message(Encodium):
     content = String.Definition()
 
 
-class Database:
-
-    def __init__(self):
-        self.redis = Redis()
-
-
-
-
 class LMM:
     """ Last message machine, connect to p2p network and display the last broadcast message.
     """
@@ -42,29 +34,26 @@ class LMM:
         self.id = id
         self._shutdown = False
 
-        self.db = Database()
-
         self.previous_messages = set()
 
         @self.network.method(Message)
         def message(payload):
             if payload.content in self.previous_messages:
-                return Encodium()
+                return
             self.previous_messages.add(payload.content)
             print("%20s: %s" % (payload.name, payload.content))
             self.network.broadcast(message.__name__, payload)
-            return Encodium()
 
-    def create_message_occasionally(self):
+    def noise_loop(self):
         print("Starting noise")
         while not self._shutdown:
             random_number = random.randint(100,100000)
             self.network.broadcast('message', Message(name=self.id, content=str(random_number)))
             print("%20s: %s" % ("created", random_number))
-            utils.loop_break_on_shutdown(self, random.randint(4,6))
+            utils.nice_sleep(self, random.randint(4,6))
 
     def start_noise_thread(self):
-        self.noise_thread = threading.Thread(target=self.create_message_occasionally)
+        self.noise_thread = threading.Thread(target=self.noise_loop)
         self.noise_thread.start()
 
 
@@ -86,16 +75,15 @@ class LMM:
 try:
     port = int(sys.argv[1])
 except:
-    port = 1522
-print(port, sys.argv, int(sys.argv[1]))
+    print('Usage: ./last_message_machine.py PORT')
+    sys.exit()
 
-lmm = LMM(port, str(port))
+lmm = LMM(port, "BOT" + str(port))
 
 def main():
     try:
         lmm.run()
     except:
-        print('Usage: ./last_message_machine.py PORT')
         traceback.print_exc()
     finally:
         lmm.shutdown()

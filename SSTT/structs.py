@@ -2,6 +2,7 @@ import traceback
 
 from requests.exceptions import ConnectionError, Timeout
 
+from flask import request as incoming_request
 import jsonrpc_requests
 from encodium import Encodium, Integer, String, List
 
@@ -51,7 +52,7 @@ class Peer(Encodium):
                 self.should_ban = True
                 print("Exception:", e.args)
                 traceback.print_exc()
-                print("Occurred carrying", message, payload)
+                print("Occurred carrying", message, payload, incoming_request.remote_addr)
 
     @property
     def as_pair(self):
