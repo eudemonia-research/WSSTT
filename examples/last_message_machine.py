@@ -56,6 +56,7 @@ class LMM:
         self.noise_thread = threading.Thread(target=self.noise_loop)
         self.noise_thread.start()
 
+    #def join_threads
 
     def run(self):
         self.start_noise_thread()
@@ -64,8 +65,7 @@ class LMM:
         except Exception as e:
             print(e)
         finally:
-            self.network.shutdown()
-            self._shutdown = True
+            self.shutdown()
             self.noise_thread.join()
 
     def shutdown(self):

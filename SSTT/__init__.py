@@ -113,6 +113,10 @@ class Network:
         return inner_method
 
 
+    def all_peers(self):
+        return [self.peer_objects[pair] for pair in self.active_peers]
+
+
     def should_add_peer(self, peer: Peer):
         '''
         :param peer: Peer object to check if we should add
@@ -210,14 +214,15 @@ class Network:
         print('shutdown')
 
 
-    def broadcast_with_response(self, encodium_class_to_receive: Encodium, message, payload: Encodium):
+    def broadcast_with_response(self, encodium_class_to_receive: Encodium, message, payload: Encodium=Encodium()):
         responses = []
         threads = []
-        f = lambda : responses.append(self.request_an_obj_from_peer(encodium_class_to_receive, self.get_peer(pair), message, payload))
+
+        f = lambda host_port : responses.append(self.request_an_obj_from_peer(encodium_class_to_receive, self.get_peer(host_port), message, payload))
 
         with self.active_peers_lock:
             for pair in self.active_peers:
-                threads.append(threading.Thread(target=f))
+                threads.append(fire(target=f, args=(pair,)))
         for t in threads: t.join()
         return [r for r in responses if r is not None]
 

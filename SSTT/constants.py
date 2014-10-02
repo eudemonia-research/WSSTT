@@ -9,6 +9,7 @@ settings = {
     "client": "SSTT ALPHA %d.%d.%d" % _version_numbers,
     "port": 12345,
     "max_peers": 20,
+    "network_id": "SSTT - UNSET"
 }
 
 

@@ -26,11 +26,19 @@ class Peer(Encodium):
         self.server = jsonrpc_requests.Server("http://%s:%d/" % (self.host, int(self.port)), timeout=5.0, verify=False)
         self.should_ban = False
         self.should_kick = False
+        self._error_count = 0  # this resets on a successful request
 
     def __hash__(self):
         return self.host.__hash__() + self.port.__hash__()
 
     def request(self, message, payload: Encodium, nonce=0):
+        self.should_kick = False
+        self.should_ban = False
+
+        if self._error_count >= 10:
+            self.should_ban = True  # todo : bans should have a time associated..
+            return None
+
         try:
             result = self.server.send_request(MESSAGE, False,
                                               [MessageBubble.from_message_payload(message, payload, nonce=nonce).to_json()])
@@ -39,8 +47,11 @@ class Peer(Encodium):
                 # todo: figure out best policy here
                 self.should_ban = True
             else:
-                return MessageBubble.from_json(result)
+                bubble = MessageBubble.from_json(result)
+                self._error_count = 0
+                return bubble
         except Exception as e:
+            self._error_count += 1
             if len(e.args) >= 2:
                 if isinstance(e.args[1], ConnectionError):
                     print('connection error')
