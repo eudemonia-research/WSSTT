@@ -2,13 +2,13 @@
 
 from setuptools import setup
 
-setup(name='SSTT',
+setup(name='WSSTT',
       version='0.0.2',
-      description='P2P Message Transport Layer via JSONRPC over HTTP',
+      description='P2P Message Transport Layer via WebSockets',
       author='Max Kaye',
       author_email='max@eudemonia.io',
-      packages=['SSTT'],
-      install_requires=['Flask', 'Flask-JSONRPC', 'jsonrpc-requests', 'encodium', 'tornado'],
+      packages=['WSSTT'],
+      install_requires=['encodium'],
      )
 
 

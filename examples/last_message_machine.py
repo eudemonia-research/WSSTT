@@ -15,10 +15,13 @@ from redis import Redis
 
 from encodium import Encodium, String
 
-from SSTT import Network, utils
+from WSSTT import Network, utils
 
 seeds = (('127.0.0.1', 12000),)
-
+import logging
+logger = logging.getLogger('websockets.server')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(logging.StreamHandler())
 
 class Message(Encodium):
     name = String.Definition()
@@ -42,7 +45,7 @@ class LMM:
                 return
             self.previous_messages.add(payload.content)
             print("%20s: %s" % (payload.name, payload.content))
-            self.network.broadcast(message.__name__, payload)
+            self.network.broadcast(message, payload)
 
     def noise_loop(self):
         print("Starting noise")
@@ -64,6 +67,7 @@ class LMM:
             self.network.run()
         except Exception as e:
             print(e)
+            traceback.print_exc()
         finally:
             self.shutdown()
             self.noise_thread.join()
@@ -75,7 +79,7 @@ class LMM:
 try:
     port = int(sys.argv[1])
 except:
-    print('Usage: ./last_message_machine.py PORT')
+    print('Usage: ./last_message_machine.py PORT\nThe seed is set to 127.0.0.1:12000\n')
     sys.exit()
 
 lmm = LMM(port, "BOT" + str(port))
