@@ -35,13 +35,14 @@ class Peer(Encodium):
         self.should_kick = False
         self.should_ban = False
 
-        if self._error_count >= 10:
+        if self._error_count >= 5:
             self.should_ban = True  # todo : bans should have a time associated..
             return None
 
         try:
             result = self.server.send_request(MESSAGE, False,
                                               [MessageBubble.from_message_payload(message, payload, nonce=nonce).to_json()])
+            print('Request: %s\nResponse: %s' % ((message, payload.to_json()[:144]), result[:144] if result is not None else result))
             if result is None:
                 # mark peer banned or bad
                 # todo: figure out best policy here

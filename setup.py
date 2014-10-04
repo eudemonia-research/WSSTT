@@ -8,7 +8,7 @@ setup(name='SSTT',
       author='Max Kaye',
       author_email='max@eudemonia.io',
       packages=['SSTT'],
-      install_requires=['Flask', 'Flask-JSONRPC', 'jsonrpc-requests', 'encodium'],
+      install_requires=['Flask', 'Flask-JSONRPC', 'jsonrpc-requests', 'encodium', 'tornado'],
      )
 
 

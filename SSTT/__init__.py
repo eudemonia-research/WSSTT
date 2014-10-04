@@ -65,7 +65,7 @@ class Network:
         @self.jsonrpc.method(MESSAGE)
         def message(serialized_bubble):
             bubble = MessageBubble.from_json(serialized_bubble)
-            print(bubble.payload)
+            print(serialized_bubble)
             peer_pair = (incoming_request.remote_addr, bubble.serving_from)
 
             if bubble.nonce in self.my_nonces:
@@ -189,6 +189,7 @@ class Network:
 
 
     def kick(self, peer: Peer):
+        print('kick', peer.to_json())
         with self.active_peers_lock:
             if peer.as_pair in self.active_peers:
                 self.active_peers.remove(peer.as_pair)
@@ -206,6 +207,7 @@ class Network:
         while not self._shutdown:
             try:
                 _, message, payload = self.to_broadcast.get(block=True, timeout=0.2)
+                print("Broadcast loop got (%s, %s)" % (message, payload))
                 with self.active_peers_lock:
                     for pair in self.active_peers:
                         fire(target=self.request_an_obj_from_peer, args=(Encodium, self.peer_objects[pair], message, payload))
@@ -263,12 +265,12 @@ class Network:
         :return: The object sought; we call this function recursively if the call to a specific peer fails.
         '''
         with self.active_peers_lock:
-            peer = self.peer_objects[random.choice(self.active_peers)]
-        result = self.request_an_obj_from_peer(encodium_class, method, payload, nonce)
+            peer = self.peer_objects[random.sample(self.active_peers, 1)[0]]
+        result = self.request_an_obj_from_peer(encodium_class, peer, method, payload, nonce)
         if result is None:
             return self.request_an_obj_from_hive(encodium_class, method, payload, nonce)
         else:
-            return encodium_class.from_json(result.payload)
+            return result
 
 
     def crawl_loop(self):
@@ -322,4 +324,4 @@ class Network:
         while not self._shutdown:
             make_peers_random()
             print('tick', self.active_peers, self.peer_objects, self.banned)
-            nice_sleep(self, 5)
+            nice_sleep(self, 60*15)  # mix things up every 15 minutes.
