@@ -43,7 +43,11 @@ class Peer(Encodium):
             self.should_ban = True  # todo : bans should have a time associated..
             return None
 
-        yield from self.websocket.send(MessageBubble.from_message_payload(message, payload, nonce=nonce).to_json())
+        try:
+            yield from self.websocket.send(MessageBubble.from_message_payload(message, payload, nonce=nonce).to_json())
+        except websockets.exceptions.InvalidState as e:
+            self.should_kick = True
+            raise
         result = yield from self.websocket.recv()
         print('Request: %s\nResponse: %s' % ((message, payload.to_json()[:144]), result[:144] if result is not None else result))
         if result is None:
