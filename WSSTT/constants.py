@@ -6,10 +6,10 @@ _version_integer = sum([n * 10**i for i, n in enumerate(_version_numbers[::-1])]
 
 settings = {
     "version": _version_integer,
-    "client": "SSTT ALPHA %d.%d.%d" % _version_numbers,
+    "client": "WSSTT ALPHA %d.%d.%d" % _version_numbers,
     "port": 12345,
     "max_peers": 20,
-    "network_id": "SSTT - UNSET"
+    "network_id": "WSSTT - UNSET"
 }
 
 

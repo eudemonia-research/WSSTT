@@ -20,8 +20,8 @@ def wait_for_all_threads_to_finish(threads):
     for t in threads:
         t.join()
 
-def fire(target, args=()):
-    t = threading.Thread(target=target, args=args)
+def fire(target, args=(), kwargs={}):
+    t = threading.Thread(target=target, args=args, kwargs=kwargs)
     t.start()
     return t
 

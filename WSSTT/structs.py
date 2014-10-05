@@ -1,4 +1,3 @@
-import asyncio
 import traceback
 
 import websockets
@@ -33,7 +32,13 @@ class Peer(Encodium):
     def __hash__(self):
         return self.host.__hash__() + self.port.__hash__()
 
-    def request(self, message, payload: Encodium, nonce=0):
+    def mark_for_kick(self):
+        self.should_kick = True
+
+    def mark_for_ban(self):
+        self.should_ban = True
+
+    def send(self, message, payload: Encodium, nonce=0):
         if self.websocket is None:
             raise WebsocketAbsent(self.websocket)
         self.should_kick = False
@@ -43,25 +48,21 @@ class Peer(Encodium):
             self.should_ban = True  # todo : bans should have a time associated..
             return None
 
+        if not self.websocket.open:
+            self.should_kick = True
+            return
+
         try:
             yield from self.websocket.send(MessageBubble.from_message_payload(message, payload, nonce=nonce).to_json())
         except websockets.exceptions.InvalidState as e:
             self.should_kick = True
             raise
-        result = yield from self.websocket.recv()
-        print('Request: %s\nResponse: %s' % ((message, payload.to_json()[:144]), result[:144] if result is not None else result))
-        if result is None:
-            # mark peer banned or bad
-            # todo: figure out best policy here
-            #self.should_ban = True
-            return
-        else:
-            bubble = MessageBubble.from_json(result)
-            self._error_count = 0
-            return bubble
+        print('Sent: %s\n' % ((message, payload.to_json()[:144]),))
 
     def shutdown(self):
         # If there's a websocket to terminate, do it
+        import asyncio
+
         if isinstance(self.websocket, websockets.WebSocketCommonProtocol):
             asyncio.async(self.websocket.close())
 

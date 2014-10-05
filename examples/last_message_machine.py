@@ -33,14 +33,14 @@ class LMM:
     """
 
     def __init__(self, port, id: str):
-        self.network = Network(seeds=seeds, address=('127.0.0.1', port))
+        self.network = Network(seeds=seeds, address=('127.0.0.1', port), debug=True)
         self.id = id
         self._shutdown = False
 
         self.previous_messages = set()
 
         @self.network.method(Message)
-        def message(payload):
+        def message(peer, payload):
             if payload.content in self.previous_messages:
                 return
             self.previous_messages.add(payload.content)
@@ -49,7 +49,7 @@ class LMM:
 
     def noise_loop(self):
         print("Starting noise")
-        while not self._shutdown:
+        while not self._shutdown and not self.network._shutdown:
             random_number = random.randint(100,100000)
             self.network.broadcast('message', Message(name=self.id, content=str(random_number)))
             print("%20s: %s" % ("created", random_number))

@@ -16,19 +16,20 @@ def ping(payload):                     # function name is the method name (rpc)
 
 network.run()
 """
-import asyncio
-
-import threading, random
+import threading, random, os, sys, subprocess
 from queue import PriorityQueue
 from queue import Empty
+import time
+import asyncio
 
 import websockets
 from encodium import Encodium, List, String, Integer
-import time
 
 from .constants import *
 from .structs import *
 from .utils import *
+from . import autoreload
+
 
 
 class Network:
@@ -63,9 +64,10 @@ class Network:
         self.to_broadcast = PriorityQueue()
 
         @self.method(name=PEER_INFO)
-        def _peer_info(_):
+        def _peer_info(peer: Peer, _):
             with self.active_peers_lock:
-                return PeerInfo(peers=[self.get_peer(i) for i in self.active_peers])
+                peer_info = PeerInfo(peers=[self.get_peer(i) for i in self.active_peers])
+            peer.send(PEER_INFO, peer_info)
 
 
 
@@ -79,14 +81,8 @@ class Network:
         '''
         def inner_method(func):
             method = func.__name__ if name is None else name
-            def deserialize_and_pass_to_func(serialized_payload):
-                returned_object = func(encodium_class.from_json(serialized_payload))
-                if returned_object is None:
-                    returned_object = Encodium()
-                if not isinstance(returned_object, Encodium):  # sanity check, users can be silly
-                    raise Exception('Bad return value, not an encodium object, %s' % str(returned_object))
-                nonce = self.get_new_nonce()
-                return MessageBubble.from_message_payload(method, returned_object, nonce=nonce).to_json()
+            def deserialize_and_pass_to_func(peer, serialized_payload):
+                returned_object = func(peer, encodium_class.from_json(serialized_payload))
 
             self.methods[method] = deserialize_and_pass_to_func
         return inner_method
@@ -105,19 +101,23 @@ class Network:
         return [self.peer_objects[pair] for pair in self.active_peers]
 
 
+    def is_peer_active(self, peer: Peer):
+        return peer.as_pair in self.active_peers
+
+
     def should_add_peer(self, peer: Peer):
         '''
         :param peer: Peer object to check if we should add
         :return: boolean
         '''
-        if peer.as_pair in self.banned:
+        if peer.as_pair in self.banned or peer.as_pair in self.active_peers:
             return False
         if len(self.active_peers) > settings['max_peers']:
             return False
         return True
 
 
-    def add_subscriber(self, peer: Peer, websocket: websockets.WebSocketCommonProtocol=None):
+    def add_subscriber(self, peer: Peer, websocket: websockets.WebSocketCommonProtocol):
         '''
         Add a peer as a subscriber.
         :param peer: the Peer object to add
@@ -125,15 +125,14 @@ class Network:
         '''
         if not self.should_add_peer(peer):
             return
-        print('Add sub', peer.to_json())
-        with self.active_peers_lock:
-            self.active_peers.add(peer.as_pair)
+        print('Add subscriber', peer.to_json())
         if websocket is None:
             print('No websocket')
         else:
-            print('have websocket')
-            print(websocket)
             peer.websocket = websocket
+        with self.active_peers_lock:
+            self.active_peers.add(peer.as_pair)
+        asyncio.async(self.listen_loop(peer.host, peer.websocket))
 
 
     def remove_all_subscribers(self):
@@ -149,16 +148,14 @@ class Network:
 
     def broadcast_with_response(self, encodium_class_to_receive: Encodium, message, payload: Encodium=Encodium()):
         with self.active_peers_lock:
-            responses = yield from [(yield from self.request_an_obj_from_peer(encodium_class_to_receive, self.get_peer(pair), message, payload)) for pair in self.active_peers]
+            responses = yield from [(yield from self.send_to_peer(self.get_peer(pair), message, payload)) for pair in self.active_peers]
             print(responses)
         return responses
 
 
-    @asyncio.coroutine
-    def request_an_obj_from_peer(self, encodium_class: Encodium, peer: Peer, method, payload: Encodium=Encodium(), nonce=None):
+    def send_to_peer(self, peer: Peer, method, payload: Encodium=Encodium(), nonce=None):
         '''
         Seek an `encodium_object` from a randomly chosen peer. Send a `method` and `payload`. Optionally specify a nonce.
-        :param encodium_class: The class to seek (not an instance)
         :param peer: A Peer object - will seek from this peer
         :param method: The method as a string
         :param payload: Payload as an encodium object
@@ -168,23 +165,10 @@ class Network:
         if nonce is None:
             nonce = self.get_new_nonce()
         try:
-            result = yield from peer.request(method, payload, nonce)
+            yield from peer.send(method, payload, nonce)
         except Exception as e:
-            result = None  # peer was probably uninitialized
             print("WARNING", e)
             traceback.print_exc()
-        if result is None:
-            print('None result', method, payload.to_json())
-            #self.ban(peer)
-            if peer.should_ban:
-                # ban
-                print('told to ban')
-                self.ban(peer)
-            elif peer.should_kick:
-                self.kick(peer)
-        else:
-            print(result.payload)
-            return encodium_class.from_json(result.payload)
 
 
     def request_an_obj_from_hive(self, encodium_class: Encodium, method, payload: Encodium=Encodium(), nonce=None):
@@ -198,7 +182,7 @@ class Network:
         '''
         with self.active_peers_lock:
             peer = self.peer_objects[random.sample(self.active_peers, 1)[0]]
-        result = self.request_an_obj_from_peer(encodium_class, peer, method, payload, nonce)
+        result = self.send_to_peer(peer, method, payload, nonce)
         if result is None:
             return self.request_an_obj_from_hive(encodium_class, method, payload, nonce)
         else:
@@ -210,19 +194,58 @@ class Network:
         self.my_nonces.add(nonce)
         return nonce
 
+    #
+    #  Peer and Message stuff
+    #
+
+
+    @asyncio.coroutine
+    def listen_loop(self, remote_ip: str, websocket):
+        print("Starting listner loop for remote", remote_ip)
+        peer = None
+        while not self._shutdown and (peer is None or self.is_peer_active(peer)):
+            raw_message = yield from websocket.recv()
+            if raw_message is None:
+                return
+            bubble = MessageBubble.from_json(raw_message)
+            if peer is None:
+                peer = self.get_peer((remote_ip, bubble.serving_from))
+                self.add_subscriber(peer, websocket)
+
+            print('Listner loop got', raw_message)
+            peer_pair = (websocket.host, websocket.port)
+
+            if bubble.nonce in self.my_nonces:
+                print('banning, detected self')
+                self.ban(peer)
+                return
+
+            yield self.methods[bubble.message](peer, bubble.payload)
+
 
     def run(self):
+        self._run()
+
+    def _run(self):
+
+        def get_new_websocket(pair):
+            try:
+                return (yield from websockets.connect("ws://%s:%d" % pair))
+            except ConnectionRefusedError:
+                self.kick(self.get_peer(pair))
+
         @asyncio.coroutine
         def on_start():
             print('On_start')
             # init
+            yield from asyncio.sleep(0.5)  # warmup
             for seed in self.seeds:
                 print(seed)
                 if seed != self.address:
-                    print('adding', self.get_peer(seed).to_json())
-                    socket = yield from websockets.connect("ws://%s:%d" % seed)
-                    print(socket)
-                    self.add_subscriber(self.get_peer(seed), socket) # need to do this to populate peer_objects
+                    print('adding', self.get_peer(seed).as_pair)
+                    socket = yield from get_new_websocket(seed)
+                    if socket is not None:
+                        self.add_subscriber(self.get_peer(seed), socket) # need to do this to populate peer_objects
 
         def broadcaster():
             try:
@@ -230,13 +253,11 @@ class Network:
                 print("Broadcast loop got (%s, %s)" % (message, payload.to_json()))
                 with self.active_peers_lock:
                     for pair in self.active_peers:
-                        asyncio.async(self.request_an_obj_from_peer(Encodium, self.get_peer(pair), message, payload))
+                        asyncio.async(self.send_to_peer(self.get_peer(pair), message, payload))
             except Empty:
                 pass
             if not self._shutdown:
                 asyncio.get_event_loop().call_later(0.2, broadcaster)
-        broadcaster()
-
 
 
         def random_peers():
@@ -268,7 +289,7 @@ class Network:
             #self.remove_all_subscribers()
             for peer in new_peers:
                 if self.should_add_peer(peer):
-                    socket = yield from websockets.connect("ws://%s:%d" % peer.as_pair)
+                    socket = yield from get_new_websocket(peer.as_pair)
                     self.add_subscriber(peer, socket)
 
         @asyncio.coroutine
@@ -278,53 +299,52 @@ class Network:
             Then the main logic takes places which is basically shuffle peers every so often.
             '''
 
-            yield from asyncio.sleep(3)
+            yield from asyncio.sleep(300)
 
             while not self._shutdown:
                 yield from make_peers_random()
                 print('tick', self.active_peers, self.peer_objects, self.banned)
-                yield from asyncio.sleep(15)  # mix things up every 15 seconds.
+                yield from asyncio.sleep(60)  # mix things up every 15 seconds.
 
 
         @asyncio.coroutine
         def handler(websocket: websockets.WebSocketServerProtocol, path):
             print("Starting")
-            peer = self.get_peer((websocket.host, websocket.port))
-            self.add_subscriber(peer, websocket)
-            while not self._shutdown:
-                raw_message = yield from websocket.recv()
-                if raw_message is None:
-                    return
-                bubble = MessageBubble.from_json(raw_message)
-
-                print('Main handler got', raw_message)
-                peer_pair = (websocket.host, websocket.port)
-
-                if bubble.nonce in self.my_nonces:
-                    print('banning, detected self')
-                    self.ban(self.peer_objects[peer_pair])
-                    return
-
-                peer = self.get_peer(peer_pair)
-                if self.should_add_peer(peer):
-                    if peer.websocket is None:
-                        socket = yield from websockets.connect("ws://%s:%d" % peer.as_pair)
-                    else:
-                        socket = peer.websocket
-                    self.add_subscriber(peer, socket)
-
-                yield from websocket.send(self.methods[bubble.message](bubble.payload))
+            remote_ip = websocket._stream_reader._transport._sock.getpeername()[0]
+            yield from self.listen_loop(remote_ip, websocket)
             print("Ending")
 
-        start_server = websockets.serve(handler, self.address[0], settings['port'])
 
-        asyncio.get_event_loop().run_until_complete(start_server)
-        #asyncio.async(crawl_loop())
-        print(0)
+        @asyncio.coroutine
+        def reloader(start_server_future):
+            while True:
+                if autoreload.code_changed():
+                    self.shutdown()
+
+                    print('info', 'Detected file change..')
+
+                    while not start_server_future.done():
+                        yield from asyncio.sleep(0.1)
+                    start_server_future.result().close()
+                    print(start_server_future)
+
+                    import signal
+                    signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
+
+                    print('info', ' * Restarting')
+                    args = [sys.executable] + sys.argv
+                    new_environ = os.environ.copy()
+
+                    fire(subprocess.call, (args,), {'env':new_environ})
+                    break
+                yield from asyncio.sleep(0.2)
+
+
+        server_future = asyncio.async(websockets.serve(handler, self.address[0], settings['port']))
         asyncio.async(on_start())
-        print(1)
         asyncio.async(crawler())
-        print(2)
+        if self.debug: asyncio.async(reloader(server_future))
+        broadcaster()
         asyncio.get_event_loop().run_forever()
 
 
