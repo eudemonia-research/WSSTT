@@ -135,7 +135,6 @@ class Network:
         if peer.as_pair in self.active_peers:
             self.get_peer(peer.as_pair).websocket = websocket
         if not self.should_add_peer(peer) or not websocket.open:
-            print('Not adding peer', peer.as_pair)
             return
         print('Add subscriber', peer.to_json())
         peer.websocket = websocket
@@ -212,7 +211,7 @@ class Network:
                 return (yield from websockets.connect("ws://%s:%d" % pair))
             except ConnectionRefusedError:
                 self.kick(self.get_peer(pair))
-                log
+                print("connection refused")
 
         @asyncio.coroutine
         def on_start():

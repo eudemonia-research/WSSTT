@@ -17,7 +17,7 @@ from encodium import Encodium, String
 
 from WSSTT import Network, utils
 
-seeds = (('127.0.0.1', 12000),)
+seeds = (('127.0.0.1', 12000), ('198.199.102.43', 12000))
 import logging
 logger = logging.getLogger('websockets.server')
 logger.setLevel(logging.DEBUG)
@@ -32,8 +32,9 @@ class LMM:
     """ Last message machine, connect to p2p network and display the last broadcast message.
     """
 
-    def __init__(self, port, id: str):
-        self.network = Network(seeds=seeds, address=('127.0.0.1', port), debug=True)
+    def __init__(self, port, id: str, beyond_localhost=False):
+        host = '0.0.0.0' if beyond_localhost else '127.0.0.1'
+        self.network = Network(seeds=seeds, address=(host, port), debug=True)
         self.id = id
         self._shutdown = False
 
