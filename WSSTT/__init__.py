@@ -22,6 +22,7 @@ def ping(peer: Peer, payload: Encoidum)
 
 network.run()
 """
+import ssl
 import threading, random, os, sys, subprocess
 from queue import PriorityQueue
 from queue import Empty
@@ -57,6 +58,8 @@ class Network:
         self.seeds = seeds
         self.address = address
         settings['port'] = address[1]
+        self.ssl = ssl.create_default_context()
+        self.ssl = None
         self.debug = debug
 
         self.active_peers = set()  # contains ('host', int(port)) tuples
@@ -248,7 +251,7 @@ class Network:
 
 
         def make_peers_random():
-            new_peers = random.sample(self._known_peers, min(len(self._known_peers), 10))
+            new_peers = random.sample(self._known_peers.difference(self.banned), min(len(self._known_peers), 10))
             for pair in new_peers:
                 peer = self.get_peer(pair)
                 if self.should_add_peer(peer):
@@ -309,7 +312,7 @@ class Network:
                 yield from asyncio.sleep(0.2)
 
 
-        server_future = asyncio.async(websockets.serve(handler, self.address[0], settings['port']))
+        server_future = asyncio.async(websockets.serve(handler, self.address[0], settings['port'], ssl=self.ssl))
         asyncio.async(on_start())
         asyncio.async(crawler())
         if self.debug: asyncio.async(reloader(server_future))

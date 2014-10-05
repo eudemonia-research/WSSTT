@@ -17,7 +17,7 @@ from encodium import Encodium, String
 
 from WSSTT import Network, utils
 
-seeds = (('127.0.0.1', 12000), ('198.199.102.43', 12000))
+seeds = (('127.0.0.1', 12000), ('xk.io', 12000))
 import logging
 logger = logging.getLogger('websockets.server')
 logger.setLevel(logging.DEBUG)
@@ -45,7 +45,7 @@ class LMM:
             if payload.content in self.previous_messages:
                 return
             self.previous_messages.add(payload.content)
-            print("<<%s %10s: %s" % (peer.port, payload.name, payload.content))
+            print("<<%s %10s: %s" % (peer.host + ':' + str(peer.port), payload.name, payload.content))
             self.network.broadcast('message', payload)
 
     def noise_loop(self):
