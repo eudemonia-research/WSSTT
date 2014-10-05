@@ -4,8 +4,8 @@ import websockets
 
 from encodium import Encodium, Integer, String, List
 
-from SSTT.constants import *
-
+from .constants import *
+from .settings import settings
 
 MESSAGE = 'message'
 PAYLOAD = 'payload'
@@ -15,7 +15,8 @@ Port = Version = Integer
 Payload = Message = String
 
 
-WebsocketAbsent = Exception
+class WebsocketAbsent(Exception):
+    pass
 
 
 class Peer(Encodium):
@@ -37,6 +38,9 @@ class Peer(Encodium):
 
     def mark_for_ban(self):
         self.should_ban = True
+
+    def close(self):
+        self.websocket.close()
 
     def send(self, message, payload: Encodium, nonce=0):
         if self.websocket is None:
@@ -74,20 +78,20 @@ class Peer(Encodium):
     def from_pair(cls, pair):
         return Peer(host=pair[0], port=pair[1])
 
+class GetPeerInfo(Encodium):
+    pass
 
-class PeerInfo(Encodium):
+class PutPeerInfo(Encodium):
     peers = List.Definition(Peer.Definition(), default=[])
 
-
 class MessageBubble(Encodium):
-    version = Version.Definition()
-    client = String.Definition()
-    serving_from = Port.Definition()
+    version = Version.Definition(default=settings.version)
+    client = String.Definition(default=settings.client)
+    serving_from = Port.Definition(default=settings.port)
     message = Message.Definition()
     payload = Payload.Definition()
     nonce = Integer.Definition()
 
     @classmethod
     def from_message_payload(cls, message, payload: Encodium, nonce=0):
-        return MessageBubble(payload=payload.to_json(), version=settings['version'], client=settings['client'],
-                             serving_from=settings['port'], message=message, nonce=nonce)
+        return MessageBubble(payload=payload.to_json(), message=message, nonce=nonce)

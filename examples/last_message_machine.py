@@ -44,7 +44,7 @@ class LMM:
             if payload.content in self.previous_messages:
                 return
             self.previous_messages.add(payload.content)
-            print("%20s: %s" % (payload.name, payload.content))
+            print("<<%s %10s: %s" % (payload.name[-1], payload.name, payload.content))
             self.network.broadcast('message', payload)
 
     def noise_loop(self):

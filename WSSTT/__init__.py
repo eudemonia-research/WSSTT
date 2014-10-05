@@ -1,18 +1,24 @@
-""" WSSTT - a light pseudo-p2p network using JSON-RPC over HTTP.
+""" WSSTT - a light pseudo-p2p network using WebSockets.
 Suitable for frequently communicating p2p networks using a best-effort relay policy.
 WSSTT handles peer management, and provides a messaging layer on top for nodes to communicate with.
 
-Inspired somewhat by Spore
+Inspired by Spore
 
 Example:
 
 from WSSTT import Network
 
+PING = 'ping'
+PONG = 'pong'
+
 network = Network(seeds, addr, debug, etc...)
 
-@network.method(Ping)                  # optional encodium object to deserialize to
-def ping(payload):                     # function name is the method name (rpc)
-    return Pong(nonce=payload.nonce)   # return an encodium object, will be serialized to json
+@network.method(incoming_type=Ping,         # Encodium type to deserialize to.
+                method=PING,                # If not provided the function's name is used.
+                return_method=PONG)         # If anything returned it will be sent to the peer under this method.
+def ping(peer: Peer, payload: Encoidum)
+    return Pong(nonce=payload.nonce)        # An encodium object should be returned.
+                                            # todo: automatically cast Integers, Strings, etc
 
 network.run()
 """
@@ -62,43 +68,50 @@ class Network:
         self.methods = {}
 
         self.to_broadcast = PriorityQueue()
+        self._known_peers = set()
 
-        @self.method(name=PEER_INFO)
-        def _peer_info(peer: Peer, _):
+        @self.method(incoming_type=GetPeerInfo, method=GET_PEER_INFO, return_method=PUT_PEER_INFO)
+        def get_peer_info(peer: Peer, payload):
             with self.active_peers_lock:
-                peer_info = PeerInfo(peers=[self.get_peer(i) for i in self.active_peers])
-            peer.send(PEER_INFO, peer_info)
+                return PutPeerInfo(peers=[self.get_peer(i) for i in self.active_peers])
+
+        @self.method(incoming_type=PutPeerInfo, method=PutPeerInfo)
+        def put_peer_info(peer: Peer, payload: PutPeerInfo):
+            self.notify_of_peers(PutPeerInfo.peers)
 
 
 
-    def method(self, encodium_class: Encodium=Encodium, name=None):  # decorator
-        ''' Decorate a function to turn it into a message on the p2p network. Messages with the **same name as the
-        function** will be passed through to it unless the name argument is specified.
-        Functions therefore **must** be named identically to the message, or specify the name argument.
-        :param encodium_class: The class to deserialize to
-        :param name: an optional name to use instead of the function name
-        :return: a function - .method() is a decorator
+    def method(self, incoming_type: Encodium=Encodium, method=None, return_method='DEFAULT'):  # decorator
+        ''' Decorate a function to turn it into a message on the p2p network. Messages with the **same method as the
+        function** will be passed through to it unless the method argument is specified.
+        Functions therefore **must** be named identically to the message, or specify the message argument.
         '''
         def inner_method(func):
-            method = func.__name__ if name is None else name
+            _method = func.__name__ if method is None else method
             def deserialize_and_pass_to_func(peer, serialized_payload):
-                returned_object = func(peer, encodium_class.from_json(serialized_payload))
+                returned_object = func(peer, incoming_type.from_json(serialized_payload))
+                if returned_object is not None and isinstance(returned_object, Encodium):
+                    self.send_to_peer(peer, return_method, returned_object)
 
-            self.methods[method] = deserialize_and_pass_to_func
+            self.methods[_method] = deserialize_and_pass_to_func
         return inner_method
 
 
     def get_peer(self, host_port):
-        pair = host_port
-        host, port = host_port
+        pair = (host, port) = host_port
         if pair in self.peer_objects:
             return self.peer_objects[pair]
         self.peer_objects[pair] = Peer(host=host, port=port)
+        self.notify_of_peers([self.peer_objects[pair]])
         return self.peer_objects[pair]
 
+    def notify_of_peers(self, peers: list):
+        for peer in peers:
+            self._known_peers.add(peer.as_pair)
 
     def all_peers(self):
-        return [self.peer_objects[pair] for pair in self.active_peers]
+        with self.active_peers_lock:
+            return [self.peer_objects[pair] for pair in self.active_peers]
 
 
     def is_peer_active(self, peer: Peer):
@@ -117,19 +130,16 @@ class Network:
         return True
 
 
-    def add_subscriber(self, peer: Peer, websocket: websockets.WebSocketCommonProtocol):
+    def add_peer(self, peer: Peer, websocket: websockets.WebSocketCommonProtocol):
         '''
         Add a peer as a subscriber.
         :param peer: the Peer object to add
         :return: None
         '''
-        if not self.should_add_peer(peer):
+        if not self.should_add_peer(peer) or not websocket.open:
             return
         print('Add subscriber', peer.to_json())
-        if websocket is None:
-            print('No websocket')
-        else:
-            peer.websocket = websocket
+        peer.websocket = websocket
         with self.active_peers_lock:
             self.active_peers.add(peer.as_pair)
         asyncio.async(self.listen_loop(peer.host, peer.websocket))
@@ -138,8 +148,10 @@ class Network:
     def remove_all_subscribers(self):
         with self.active_peers_lock:
             for pair in self.active_peers:
+                self.peer_objects[pair].close()
                 del self.peer_objects[pair]
             self.active_peers.clear()
+
 
 
     def broadcast(self, message, payload):
@@ -210,7 +222,7 @@ class Network:
             bubble = MessageBubble.from_json(raw_message)
             if peer is None:
                 peer = self.get_peer((remote_ip, bubble.serving_from))
-                self.add_subscriber(peer, websocket)
+                self.add_peer(peer, websocket)
 
             print('Listner loop got', raw_message)
             peer_pair = (websocket.host, websocket.port)
@@ -220,7 +232,8 @@ class Network:
                 self.ban(peer)
                 return
 
-            yield self.methods[bubble.message](peer, bubble.payload)
+            if bubble.message in self.methods:
+                self.methods[bubble.message](peer, bubble.payload)
 
 
     def run(self):
@@ -245,7 +258,7 @@ class Network:
                     print('adding', self.get_peer(seed).as_pair)
                     socket = yield from get_new_websocket(seed)
                     if socket is not None:
-                        self.add_subscriber(self.get_peer(seed), socket) # need to do this to populate peer_objects
+                        self.add_peer(self.get_peer(seed), socket) # need to do this to populate peer_objects
 
         def broadcaster():
             try:
@@ -290,7 +303,7 @@ class Network:
             for peer in new_peers:
                 if self.should_add_peer(peer):
                     socket = yield from get_new_websocket(peer.as_pair)
-                    self.add_subscriber(peer, socket)
+                    self.add_peer(peer, socket)
 
         @asyncio.coroutine
         def crawler():

@@ -1,6 +1,9 @@
 import threading
 import time
+import logging
 
+from .constants import *
+from .settings import settings
 
 class MyLock:
     def __init__(self):
@@ -37,3 +40,9 @@ def nice_sleep(object, seconds):
         time.sleep(0.1)
         if object._shutdown:
             break
+
+logger = logging.getLogger(settings.short_name)
+logger.basicConfig(filename=settings.short_name)
+
+def log(*args):
+    logger.debug('DEBUG: ' + ' '.join([str(a) for a in args]))
