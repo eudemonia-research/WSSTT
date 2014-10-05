@@ -44,7 +44,7 @@ class LMM:
             if payload.content in self.previous_messages:
                 return
             self.previous_messages.add(payload.content)
-            print("<<%s %10s: %s" % (payload.name[-1], payload.name, payload.content))
+            print("<<%s %10s: %s" % (peer.port, payload.name, payload.content))
             self.network.broadcast('message', payload)
 
     def noise_loop(self):
@@ -53,7 +53,7 @@ class LMM:
             random_number = random.randint(100,100000)
             self.network.broadcast('message', Message(name=self.id, content=str(random_number)))
             print("%20s: %s" % ("created", random_number))
-            utils.nice_sleep(self, random.randint(4,6))
+            utils.nice_sleep(self, random.randint(4,20))
 
     def start_noise_thread(self):
         self.noise_thread = threading.Thread(target=self.noise_loop)

@@ -10,11 +10,11 @@ class MyLock:
         self.lock = threading.Lock()
 
     def __enter__(self):
-        print('lock start', time.time())
+        log('lock start', time.time())
         self.lock.__enter__()
 
     def __exit__(self, type, value, tb):
-        print('lock end  ', time.time())
+        log('lock end  ', time.time())
         self.lock.__exit__(type, value, tb)
 
 
@@ -42,7 +42,8 @@ def nice_sleep(object, seconds):
             break
 
 logger = logging.getLogger(settings.short_name)
-logger.basicConfig(filename=settings.short_name)
+logging.basicConfig(filename=settings.short_name + ".log", level=logging.DEBUG)
+logging.getLogger('asyncio').setLevel(logging.WARNING)
 
 def log(*args):
     logger.debug('DEBUG: ' + ' '.join([str(a) for a in args]))

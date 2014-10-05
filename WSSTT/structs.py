@@ -6,6 +6,7 @@ from encodium import Encodium, Integer, String, List
 
 from .constants import *
 from .settings import settings
+from .utils import log
 
 MESSAGE = 'message'
 PAYLOAD = 'payload'
@@ -42,7 +43,7 @@ class Peer(Encodium):
     def close(self):
         self.websocket.close()
 
-    def send(self, message, payload: Encodium, nonce=0):
+    def _send(self, message, payload: Encodium, nonce=0):
         if self.websocket is None:
             raise WebsocketAbsent(self.websocket)
         self.should_kick = False
@@ -61,14 +62,12 @@ class Peer(Encodium):
         except websockets.exceptions.InvalidState as e:
             self.should_kick = True
             raise
-        print('Sent: %s\n' % ((message, payload.to_json()[:144]),))
+        log('Sent: %s\n' % ((message, payload.to_json()[:144]),))
 
     def shutdown(self):
         # If there's a websocket to terminate, do it
-        import asyncio
-
         if isinstance(self.websocket, websockets.WebSocketCommonProtocol):
-            asyncio.async(self.websocket.close())
+            self.websocket.close()
 
     @property
     def as_pair(self):
@@ -87,11 +86,11 @@ class PutPeerInfo(Encodium):
 class MessageBubble(Encodium):
     version = Version.Definition(default=settings.version)
     client = String.Definition(default=settings.client)
-    serving_from = Port.Definition(default=settings.port)
+    serving_from = Port.Definition()
     message = Message.Definition()
     payload = Payload.Definition()
     nonce = Integer.Definition()
 
     @classmethod
     def from_message_payload(cls, message, payload: Encodium, nonce=0):
-        return MessageBubble(payload=payload.to_json(), message=message, nonce=nonce)
+        return MessageBubble(payload=payload.to_json(), message=message, nonce=nonce, serving_from=settings.port)
