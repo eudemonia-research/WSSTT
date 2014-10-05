@@ -55,8 +55,12 @@ class Network:
         self.seeds = seeds
         self.address = address
         settings['port'] = address[1]
-        self.ssl = ssl.create_default_context()
-        self.ssl = None
+        self.ssl = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        self.ssl.verify_mode = ssl.CERT_NONE
+        self.rand_string = rand_string = str(random.getrandbits(20))
+        print(subprocess.call("openssl genpkey -out {rs}.pem -algorithm rsa -pkeyopt rsa_keygen_bits:2048".format(rs=rand_string).split(' ')))
+        print(subprocess.call("openssl req -new -x509 -key {rs}.pem -out {rs}.crt -days 1095 -subj /C=XX/ST=Denial/L=WSSTT/O=Dis/CN=meh".format(rs=rand_string).split(' ')))
+        self.ssl.load_cert_chain('%s.crt' % rand_string, '%s.pem' % rand_string)
 
         self.debug = debug
 
@@ -115,10 +119,6 @@ class Network:
 
 
     def should_add_peer(self, peer: Peer):
-        '''
-        :param peer: Peer object to check if we should add
-        :return: boolean
-        '''
         if peer.as_pair in self.banned or peer.as_pair in self.active_peers:
             return False
         if len(self.active_peers) > settings.max_peers:
@@ -127,11 +127,6 @@ class Network:
 
 
     def add_peer(self, peer: Peer, websocket: websockets.WebSocketCommonProtocol):
-        '''
-        Add a peer as a subscriber.
-        :param peer: the Peer object to add
-        :return: None
-        '''
         if peer.as_pair in self.active_peers:
             self.get_peer(peer.as_pair).websocket = websocket
         if not self.should_add_peer(peer) or not websocket.open:
@@ -176,7 +171,7 @@ class Network:
 
     @asyncio.coroutine
     def listen_loop(self, remote_ip: str, websocket):
-        print("Starting listner loop for remote", remote_ip)
+        print("Starting listener loop for remote", remote_ip)
         peer = None
         while not self._shutdown and (peer is None or self.is_peer_active(peer)):
             raw_message = yield from websocket.recv()
@@ -187,7 +182,7 @@ class Network:
                 peer = self.get_peer((remote_ip, bubble.serving_from))
                 self.add_peer(peer, websocket)
 
-            log('Listner loop got', raw_message)
+            log('Listener loop got', raw_message)
             peer_pair = (websocket.host, websocket.port)
 
             if bubble.nonce in self.my_nonces:
@@ -199,7 +194,7 @@ class Network:
                 yield from self.methods[bubble.message](peer, bubble.payload)
             else:
                 print('Method not found', bubble.message)
-        print('Ending remote loop for ')
+        print('Ending remote loop for', peer.as_pair)
 
     def run(self):
         self._run()
@@ -208,10 +203,10 @@ class Network:
 
         def get_new_websocket(pair):
             try:
-                return (yield from websockets.connect("ws://%s:%d" % pair))
+                return (yield from websockets.connect("wss://%s:%d" % pair, ssl=self.ssl))
             except ConnectionRefusedError:
                 self.kick(self.get_peer(pair))
-                print("connection refused")
+                log("connection refused from", pair)
 
         @asyncio.coroutine
         def on_start():
@@ -241,11 +236,7 @@ class Network:
 
 
         def make_peer_requests():
-            '''
-            :return: A completely fresh set of subscribers
-            '''
             self.broadcast(GET_PEER_INFO, GetPeerInfo())
-
 
         def make_peers_random():
             sample = self._known_peers.difference(self.banned).difference(self.active_peers)
@@ -262,12 +253,7 @@ class Network:
 
         @asyncio.coroutine
         def crawler():
-            ''' This loop crawls for peers.
-            First there is some warmup time, then functions are defined.
-            Then the main logic takes places which is basically shuffle peers every so often.
-            '''
-
-            yield from asyncio.sleep(3)
+            yield from asyncio.sleep(3)  # warmup
             make_peer_requests()
             yield from asyncio.sleep(3)
 
@@ -321,6 +307,11 @@ class Network:
 
     def shutdown(self):
         self._shutdown = True
+        try:
+            os.remove('%s.crt' % self.rand_string)
+            os.remove('%s.pem' % self.rand_string)
+        except:
+            pass
 
     def ban(self, peer: Peer):
         print('banning', peer.as_pair)
