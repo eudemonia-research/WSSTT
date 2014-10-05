@@ -58,8 +58,9 @@ class Network:
         self.ssl = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         self.ssl.verify_mode = ssl.CERT_NONE
         self.rand_string = rand_string = str(random.getrandbits(20))
+        # todo : set cipher suites so we always have FS and nothing else is allowed
         print(subprocess.call("openssl genpkey -out {rs}.pem -algorithm rsa -pkeyopt rsa_keygen_bits:2048".format(rs=rand_string).split(' ')))
-        print(subprocess.call("openssl req -new -x509 -key {rs}.pem -out {rs}.crt -days 1095 -subj /C=XX/ST=Denial/L=WSSTT/O=Dis/CN=meh".format(rs=rand_string).split(' ')))
+        print(subprocess.call("openssl req -new -x509 -key {rs}.pem -out {rs}.crt -days 0 -subj /C=XX/ST=Denial/L=North/O=WSSTT/CN=nowhere".format(rs=rand_string).split(' ')))
         self.ssl.load_cert_chain('%s.crt' % rand_string, '%s.pem' % rand_string)
 
         self.debug = debug
@@ -258,7 +259,6 @@ class Network:
             yield from asyncio.sleep(3)
 
             while not self._shutdown:
-                print('crawl-start')
                 yield from make_peers_random()
                 print('peers-tick', self.active_peers, self._known_peers, self.banned)
                 yield from asyncio.sleep(50)  # mix things up every 60 seconds.
