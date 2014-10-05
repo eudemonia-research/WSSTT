@@ -43,7 +43,7 @@ class Network:
     """ Network is a class to manage P2P relationships.
     """
 
-    def __init__(self, seeds=(('127.0.0.1', 54321),), address=('127.0.0.1', 54321), debug=True):
+    def __init__(self, seeds=(('127.0.0.1', 54321),), address=('127.0.0.1', 54321), debug=True, peer_shakeup_interval=60):
         if debug:
             import logging
             logger = logging.getLogger('websockets.server')
@@ -57,18 +57,19 @@ class Network:
         settings['port'] = address[1]
         self.ssl = ssl.create_default_context()
         self.ssl = None
+
         self.debug = debug
 
         self.active_peers = set()  # contains ('host', int(port)) tuples
         self.active_peers_lock = threading.Lock()  # use MyLock() to test
         self.peer_objects = {}  # map host-port tuples to Peer objects
         self.banned = set()  # contains host-pair tuples.
+        self._known_peers = set()
         self.my_nonces = set()
 
         self.methods = {}
 
         self.to_broadcast = PriorityQueue()
-        self._known_peers = set()
 
         @self.method(incoming_type=GetPeerInfo, method=GET_PEER_INFO, return_method=PUT_PEER_INFO)
         def get_peer_info(peer: Peer, payload):
@@ -247,7 +248,8 @@ class Network:
 
 
         def make_peers_random():
-            new_peers = random.sample(self._known_peers.difference(self.banned), min(len(self._known_peers), 10))
+            sample = self._known_peers.difference(self.banned).difference(self.active_peers)
+            new_peers = random.sample(sample, min(len(sample), 10))
             for pair in new_peers:
                 peer = self.get_peer(pair)
                 if self.should_add_peer(peer):
@@ -270,6 +272,7 @@ class Network:
             yield from asyncio.sleep(3)
 
             while not self._shutdown:
+                print('crawl-start')
                 yield from make_peers_random()
                 print('peers-tick', self.active_peers, self._known_peers, self.banned)
                 yield from asyncio.sleep(50)  # mix things up every 60 seconds.

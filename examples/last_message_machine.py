@@ -1,4 +1,4 @@
-""" This example demonstrates SSTT's ability to propagate messages.
+""" This example demonstrates WSSTT's ability to propagate messages.
 Each client prints a message when it's received, so many clients can be visually inspected to observe synchrony.
 
 Start many instances with different ports incrementing from 12000. They'll connect and talk to each other and maintain
@@ -10,8 +10,6 @@ import time
 import random
 import threading
 import traceback
-
-from redis import Redis
 
 from encodium import Encodium, String
 
