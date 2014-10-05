@@ -158,6 +158,12 @@ class Network:
         except Exception as e:
             print("WARNING", e)
             traceback.print_exc()
+        yield None
+
+
+    def farm_message(self, method: str, payload: Encodium=Encodium(), nonce=None):
+        peer = self.peer_objects[random.sample(self.active_peers, 1)[0]]
+        next(self.send_to_peer(peer, method, payload, nonce))
 
 
     def get_new_nonce(self):
@@ -218,7 +224,6 @@ class Network:
                 if seed != self.address:
                     print('adding', self.get_peer(seed).as_pair)
                     socket = yield from get_new_websocket(seed)
-                    print(socket.open)
                     if socket is not None:
                         self.add_peer(self.get_peer(seed), socket) # need to use get_peer to populate peer_objects
 
@@ -271,13 +276,13 @@ class Network:
             remote_ip = websocket._stream_reader._transport._sock.getpeername()[0]
             yield from self.listen_loop(remote_ip, websocket)
 
-
         @asyncio.coroutine
         def reloader(start_server_future):
             while True:
                 filename = autoreload.code_changed()
                 if filename:
                     self.shutdown()
+                    asyncio.get_event_loop().close()
 
                     print('info', 'Detected file change..', filename)
 
@@ -312,6 +317,10 @@ class Network:
             os.remove('%s.pem' % self.rand_string)
         except:
             pass
+
+    @property
+    def is_shutdown(self):
+        return self._shutdown
 
     def ban(self, peer: Peer):
         print('banning', peer.as_pair)

@@ -29,18 +29,6 @@ def fire(target, args=(), kwargs={}):
     return t
 
 
-def nice_sleep(object, seconds):
-    '''
-    This sleep is nice because it pays attention to an object's ._shutdown variable.
-    :param object: some object with a _shutdown variable
-    :param seconds: seconds in float, int, w/e
-    :return: none
-    '''
-    for i in range(int(seconds * 10)):
-        time.sleep(0.1)
-        if object._shutdown:
-            break
-
 logger = logging.getLogger(settings.short_name)
 logging.basicConfig(filename=settings.short_name + ".log", level=logging.DEBUG)
 logging.getLogger('asyncio').setLevel(logging.WARNING)
