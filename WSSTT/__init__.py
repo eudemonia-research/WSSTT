@@ -41,9 +41,6 @@ from . import autoreload
 
 class Network:
     """ Network is a class to manage P2P relationships.
-
-    To add a message (and associated response) use an @network.method(DeserializeType) decorator. DeserializeType
-    is optional, and must inherit the Encodium class.
     """
 
     def __init__(self, seeds=(('127.0.0.1', 54321),), address=('127.0.0.1', 54321), debug=True):
@@ -80,7 +77,6 @@ class Network:
         @self.method(incoming_type=PutPeerInfo, method=PUT_PEER_INFO)
         def put_peer_info(peer: Peer, payload: PutPeerInfo):
             self.notify_of_peers(payload.peers)
-
 
 
     def method(self, incoming_type: Encodium=Encodium, method=None, return_method='DEFAULT'):  # decorator

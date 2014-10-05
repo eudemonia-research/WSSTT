@@ -6,8 +6,8 @@ class Settings(defaultdict):
     __setattr__ = defaultdict.__setitem__
 
 settings = Settings(lambda : 'UNSET')
-settings.version = version_integer
-settings.client = "WSSTT ALPHA %d.%d.%d" % version_numbers
+settings.version = VERSION_INTEGER
+settings.client = "WSSTT ALPHA %d.%d.%d" % VERSION_NUMBERS
 settings.short_name = "WSSTT"
 settings.port = 12345
 settings.max_peers = 20
