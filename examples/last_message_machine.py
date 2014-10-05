@@ -83,7 +83,12 @@ except:
     print('Usage: ./last_message_machine.py PORT\nThe seed is set to 127.0.0.1:12000\n')
     sys.exit()
 
-lmm = LMM(port, "BOT" + str(port))
+if len(sys.argv) > 2:
+    beyond_localhost = sys.argv[2] == "TRUE"
+else:
+    beyond_localhost = False
+
+lmm = LMM(port, "BOT" + str(port), beyond_localhost=beyond_localhost)
 
 def main():
     try:
