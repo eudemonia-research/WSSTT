@@ -94,7 +94,6 @@ class Network:
             self.methods[_method] = deserialize_and_pass_to_func
         return inner_method
 
-
     def get_peer(self, host_port):
         pair = (host, port) = host_port
         if pair in self.peer_objects:
@@ -111,7 +110,6 @@ class Network:
         with self.active_peers_lock:
             return [self.peer_objects[pair] for pair in self.active_peers]
 
-
     def is_peer_active(self, peer: Peer):
         return peer.as_pair in self.active_peers
 
@@ -123,7 +121,7 @@ class Network:
         '''
         if peer.as_pair in self.banned or peer.as_pair in self.active_peers:
             return False
-        if len(self.active_peers) > settings['max_peers']:
+        if len(self.active_peers) > settings.max_peers:
             return False
         return True
 
@@ -134,7 +132,10 @@ class Network:
         :param peer: the Peer object to add
         :return: None
         '''
+        if peer.as_pair in self.active_peers:
+            self.get_peer(peer.as_pair).websocket = websocket
         if not self.should_add_peer(peer) or not websocket.open:
+            print('Not adding peer', peer.as_pair)
             return
         print('Add subscriber', peer.to_json())
         peer.websocket = websocket
@@ -176,7 +177,7 @@ class Network:
 
     @asyncio.coroutine
     def listen_loop(self, remote_ip: str, websocket):
-        log("Starting listner loop for remote", remote_ip)
+        print("Starting listner loop for remote", remote_ip)
         peer = None
         while not self._shutdown and (peer is None or self.is_peer_active(peer)):
             raw_message = yield from websocket.recv()
@@ -199,7 +200,7 @@ class Network:
                 yield from self.methods[bubble.message](peer, bubble.payload)
             else:
                 print('Method not found', bubble.message)
-
+        print('Ending remote loop for ')
 
     def run(self):
         self._run()
@@ -211,6 +212,7 @@ class Network:
                 return (yield from websockets.connect("ws://%s:%d" % pair))
             except ConnectionRefusedError:
                 self.kick(self.get_peer(pair))
+                log
 
         @asyncio.coroutine
         def on_start():
@@ -218,12 +220,12 @@ class Network:
             # init
             yield from asyncio.sleep(0.5)  # warmup
             for seed in self.seeds:
-                print(seed)
                 if seed != self.address:
                     print('adding', self.get_peer(seed).as_pair)
                     socket = yield from get_new_websocket(seed)
+                    print(socket.open)
                     if socket is not None:
-                        self.add_peer(self.get_peer(seed), socket) # need to do this to populate peer_objects
+                        self.add_peer(self.get_peer(seed), socket) # need to use get_peer to populate peer_objects
 
         def broadcaster():
             try:
@@ -236,22 +238,18 @@ class Network:
             except Empty:
                 pass
             if not self._shutdown:
-                asyncio.get_event_loop().call_later(0.2, broadcaster)
+                asyncio.get_event_loop().call_later(0.1, broadcaster)
 
 
         def make_peer_requests():
             '''
             :return: A completely fresh set of subscribers
             '''
-            print('pr')
             self.broadcast(GET_PEER_INFO, GetPeerInfo())
-            print('pr')
 
 
         def make_peers_random():
-            print('make_peers_random')
             new_peers = random.sample(self._known_peers, min(len(self._known_peers), 10))
-            print(new_peers)
             for pair in new_peers:
                 peer = self.get_peer(pair)
                 if self.should_add_peer(peer):
@@ -270,22 +268,21 @@ class Network:
             '''
 
             yield from asyncio.sleep(3)
+            make_peer_requests()
+            yield from asyncio.sleep(3)
 
             while not self._shutdown:
-                print('crawl start')
                 yield from make_peers_random()
-                print('tick', self.active_peers, self._known_peers, self.banned)
-                yield from asyncio.sleep(3)  # mix things up every 15 seconds.
-                print(make_peer_requests())
-                yield from asyncio.sleep(3)
+                print('peers-tick', self.active_peers, self._known_peers, self.banned)
+                yield from asyncio.sleep(50)  # mix things up every 60 seconds.
+                make_peer_requests()
+                yield from asyncio.sleep(10)
 
 
         @asyncio.coroutine
         def handler(websocket: websockets.WebSocketServerProtocol, path):
-            print("Starting")
             remote_ip = websocket._stream_reader._transport._sock.getpeername()[0]
             yield from self.listen_loop(remote_ip, websocket)
-            print("Ending")
 
 
         @asyncio.coroutine
@@ -299,7 +296,7 @@ class Network:
 
                     while not start_server_future.done():
                         yield from asyncio.sleep(0.1)
-                    start_server_future.result().close()
+                    start_server_future.result().close()  # Server object... or websocket
 
                     import signal
                     signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
@@ -324,11 +321,10 @@ class Network:
     def shutdown(self):
         self._shutdown = True
 
-
     def ban(self, peer: Peer):
+        print('banning', peer.as_pair)
         self.kick(peer)
         self.banned.add(peer.as_pair)
-
 
     def kick(self, peer: Peer):
         print('kick', peer.to_json())
@@ -338,5 +334,3 @@ class Network:
             if peer.as_pair in self.peer_objects:
                 del self.peer_objects[peer.as_pair]
         peer.shutdown()
-
-
