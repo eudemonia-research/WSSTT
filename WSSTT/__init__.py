@@ -96,7 +96,8 @@ class Network:
                 try:
                     returned_object = func(peer, incoming_type.from_json(serialized_payload))
                 except Exception as e:
-                    print('borked?', _method, serialized_payload)
+                    print('borked?', _method, serialized_payload, e)
+                    traceback.print_exc()
                     raise
                 if isinstance(returned_object, Encodium):
                     yield from self.send_to_peer(peer, return_method, returned_object)
@@ -168,6 +169,10 @@ class Network:
     def farm_message(self, method: str, payload: Encodium=Encodium(), nonce=None):
         peer = self.peer_objects[random.sample(self.active_peers, 1)[0]]
         yield from self.send_to_peer(peer, method, payload, nonce)
+
+
+    def hand_message(self, method, payload):
+        yield from self.methods[method](Peer(host='127.0.0.1', port=256**2-1), payload)
 
 
     def get_new_nonce(self):
