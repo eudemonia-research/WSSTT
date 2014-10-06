@@ -75,6 +75,7 @@ class Network:
         self.methods = {}
 
         self.to_broadcast = PriorityQueue()
+        self.have_broadcast = set()
 
         @self.method(incoming_type=GetPeerInfo, method=GET_PEER_INFO, return_method=PUT_PEER_INFO)
         def get_peer_info(peer: Peer, payload):
@@ -161,8 +162,7 @@ class Network:
         try:
             yield from peer._send(method, payload, nonce)
         except Exception as e:
-            print("WARNING", e)
-            traceback.print_exc()
+            self.kick(peer)  # this didn't seem to come up much, just kick
         yield None
 
 
@@ -240,11 +240,15 @@ class Network:
             try:
                 _, message, payload = self.to_broadcast.get(block=False)
                 log("Broadcast loop got (%s, %s)" % (message, payload.to_json()))
-                asyncio.async(self.hand_message(message, payload))
-                with self.active_peers_lock:
-                    pairs = list(self.active_peers)
-                for pair in pairs:
-                    asyncio.async(self.send_to_peer(self.get_peer(pair), message, payload))
+
+                m = (message, payload.to_json())
+                if m not in self.have_broadcast:
+                    self.have_broadcast.add(m)
+                    asyncio.async(self.hand_message(message, payload))
+                    with self.active_peers_lock:
+                        pairs = list(self.active_peers)
+                    for pair in pairs:
+                        asyncio.async(self.send_to_peer(self.get_peer(pair), message, payload))
             except Empty:
                 pass
             if not self._shutdown:
