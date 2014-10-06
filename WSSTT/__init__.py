@@ -171,8 +171,8 @@ class Network:
         yield from self.send_to_peer(peer, method, payload, nonce)
 
 
-    def hand_message(self, method, payload):
-        yield from self.methods[method](Peer(host='127.0.0.1', port=256**2-1), payload)
+    def hand_message(self, method, payload: Encodium):
+        yield from self.methods[method](Peer(host='127.0.0.1', port=256**2-1), payload.to_json())
 
 
     def get_new_nonce(self):
@@ -240,6 +240,7 @@ class Network:
             try:
                 _, message, payload = self.to_broadcast.get(block=False)
                 log("Broadcast loop got (%s, %s)" % (message, payload.to_json()))
+                asyncio.async(self.hand_message(message, payload))
                 with self.active_peers_lock:
                     pairs = list(self.active_peers)
                 for pair in pairs:
