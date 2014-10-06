@@ -93,7 +93,11 @@ class Network:
         def inner_method(func):
             _method = func.__name__ if method is None else method
             def deserialize_and_pass_to_func(peer, serialized_payload):
-                returned_object = func(peer, incoming_type.from_json(serialized_payload))
+                try:
+                    returned_object = func(peer, incoming_type.from_json(serialized_payload))
+                except Exception as e:
+                    print('borked?', _method, serialized_payload)
+                    raise
                 if isinstance(returned_object, Encodium):
                     yield from self.send_to_peer(peer, return_method, returned_object)
             self.methods[_method] = deserialize_and_pass_to_func
@@ -163,7 +167,7 @@ class Network:
 
     def farm_message(self, method: str, payload: Encodium=Encodium(), nonce=None):
         peer = self.peer_objects[random.sample(self.active_peers, 1)[0]]
-        next(self.send_to_peer(peer, method, payload, nonce))
+        yield from self.send_to_peer(peer, method, payload, nonce)
 
 
     def get_new_nonce(self):
